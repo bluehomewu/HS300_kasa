@@ -1,0 +1,7 @@
+[Device1]
+ip = 192.168.xxx.xxx
+wifi_ssid = SSID_1
+
+[Device2]
+ip = 192.168.xxx.xxx
+wifi_ssid = SSID_2
