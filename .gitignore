@@ -1,0 +1,6 @@
+# Ignore local files
+
+*.config
+*.log
+*.tmp
+*.bak

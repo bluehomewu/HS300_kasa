@@ -1,0 +1,5 @@
+quart>=0.17.0
+python-kasa>=0.8
+mysql-connector-python>=8.0
+timezonefinder>=5.2.0
+schedule>=1.1.0

@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HS300 Kasa 控制面板</title>
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- jQuery (供 AJAX 等使用) -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <style>
+    body {
+      background-color: #f8f9fa;
+      padding-top: 1rem;
+    }
+    .controller-card {
+      background-color: #fff;
+      border: 1px solid #dee2e6;
+      border-radius: 0.5rem;
+      box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
+      margin-bottom: 2rem;
+      padding: 1.5rem;
+    }
+    .card-header {
+      background-color: #e9ecef;
+      font-weight: bold;
+    }
+    .action-btn {
+      margin: 0.2rem 0;
+    }
+    /* 為個別控制按鈕設定區隔色 */
+    .device-control-btn {
+      margin-right: 0.5rem;
+    }
+    /* 固定在右下角的單一跳轉按鈕 */
+    #scrollButton {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: none;
+      opacity: 0.8;
+      font-size: 24px;
+      border: none;
+      background-color: #6c757d;
+      color: #fff;
+      padding: 10px 15px;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <!-- ===== 增加：離線裝置提示 ===== -->
+  {% if offline_ips %}
+  <div class="alert alert-warning alert-dismissible fade show position-fixed top-0 end-0 m-3" role="alert" style="z-index:1050;">
+    <strong>以下裝置離線：</strong> {{ offline_ips | join(', ') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+  </div>
+  {% endif %}
+  <!-- ================================= -->
+
+  <div class="container">
+    <h1 class="text-center my-4">HS300 Kasa 控制面板</h1>
+
+    <!-- 全域控制 -->
+    <div class="mb-4 text-center">
+      <button id="allOnBtn" class="btn btn-success me-2">全部開啟 (全域)</button>
+      <button id="allOffBtn" class="btn btn-danger me-2">全部關閉 (全域)</button>
+      <!-- HomeAssistant 按鈕，於新分頁開啟 -->
+      <a href="http://192.168.10.93:8123" target="_blank" class="btn btn-info">Open HomeAssistant</a>
+    </div>
+
+    <!-- 各控制器區塊 -->
+    {% for ip in controllers %}
+    <div class="controller-card">
+      <h2 class="mb-3">HS300 @ {{ ip }}</h2>
+      <!-- 個別設備控制按鈕 -->
+      <div class="mb-3">
+        <!-- 這裡採用 outline 樣式進行顏色區隔 -->
+        <button class="btn btn-outline-success device-control-btn" onclick="deviceOn('{{ ip }}')">全部開啟 (此設備)</button>
+        <button class="btn btn-outline-danger device-control-btn" onclick="deviceOff('{{ ip }}')">全部關閉 (此設備)</button>
+      </div>
+      <div class="row">
+        <!-- 插座列表 -->
+        <div class="col-lg-8">
+          <h4>插座資料</h4>
+          <table class="table table-bordered table-striped">
+            <thead class="table-primary">
+              <tr>
+                <th>插座</th>
+                <th>狀態</th>
+                <th>電壓 (V)</th>
+                <th>電流 (A)</th>
+                <th>耗電 (W)</th>
+                <th>今日用電 (kWh)</th>
+                <th>本月用電 (kWh)</th>
+                <th>累積用電 (kWh)</th>
+                <th>開始運作時間</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="plug-data-{{ ip.replace('.', '-') }}">
+              <!-- 資料將由 WebSocket 推播更新 -->
+            </tbody>
+          </table>
+        </div>
+        <!-- 設備資訊 -->
+        <div class="col-lg-4">
+          <h4>設備資訊</h4>
+          <div class="card mb-3">
+            <div class="card-body">
+              <p><strong>時區：</strong>{{ device_info[ip].timezone }}</p>
+              <p><strong>地區：</strong>{{ device_info[ip].region }}</p>
+              <p><strong>設備時間：</strong>{{ device_info[ip].device_time }}</p>
+            </div>
+          </div>
+          <div class="card mb-3">
+            <div class="card-body">
+              <p><strong>WiFi 網路：</strong>{{ device_info[ip].wifi_network }}</p>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-body">
+              <p><strong>型號：</strong>{{ device_info[ip].model }}</p>
+              <p><strong>硬體版本：</strong>{{ device_info[ip].hardware_version }}</p>
+              <p><strong>韌體版本：</strong>{{ device_info[ip].firmware_version }}</p>
+              <p><strong>MAC 位址：</strong>{{ device_info[ip].mac_address }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+
+    <!-- 群組管理區 -->
+    <div class="card mb-5">
+      <div class="card-header">群組管理</div>
+      <div class="card-body">
+        <div class="row mb-4">
+          <div class="col-md-4">
+            <h5>建立群組</h5>
+            <form id="groupForm">
+              <div class="mb-3">
+                <label for="groupName" class="form-label">群組名稱</label>
+                <input type="text" class="form-control" id="groupName" required>
+              </div>
+              <div class="mb-3">
+                <label for="groupIndexes" class="form-label">插座索引編號 (從 0 開始，用英文半形逗號分隔)</label>
+                <input type="text" class="form-control" id="groupIndexes" required>
+              </div>
+              <div class="mb-3">
+                <label for="controllerIp" class="form-label">控制器 IP</label>
+                <select id="controllerIp" class="form-select">
+                  {% for ip in controllers %}
+                  <option value="{{ ip }}">{{ ip }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <button type="submit" class="btn btn-primary">建立群組</button>
+            </form>
+          </div>
+          <div class="col-md-8">
+            <h5>群組列表</h5>
+            <table class="table table-bordered">
+              <thead class="table-light">
+                <tr>
+                  <th>群組名稱</th>
+                  <th>插座索引</th>
+                  <th>控制器</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="group-list">
+                <!-- 群組資料將由 AJAX 填入 -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 固定於右下角的單一跳轉按鈕 -->
+  <button id="scrollButton" onclick="scrollToggle()"></button>
+
+  <!-- 以下為各功能 Modal 區塊 (保持原有內容) -->
+  <!-- Schedule Modal -->
+  <div class="modal fade" id="scheduleModal" tabindex="-1" aria-labelledby="scheduleModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="scheduleModalLabel">設定不在家模式</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="scheduleForm">
+            <div class="mb-3">
+              <label for="startTime" class="form-label">開始時間</label>
+              <input type="time" class="form-control" id="startTime" required>
+            </div>
+            <div class="mb-3">
+              <label for="endTime" class="form-label">結束時間</label>
+              <input type="time" class="form-control" id="endTime" required>
+            </div>
+            <div class="mb-3">
+              <label for="days" class="form-label">重複日期</label>
+              <select multiple class="form-select" id="days">
+                <option>Monday</option>
+                <option>Tuesday</option>
+                <option>Wednesday</option>
+                <option>Thursday</option>
+                <option>Friday</option>
+                <option>Saturday</option>
+                <option>Sunday</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Timer Modal -->
+  <div class="modal fade" id="timerModal" tabindex="-1" aria-labelledby="timerModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="timerModalLabel">設定計時器</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="timerForm">
+            <div class="mb-3">
+              <label for="timerDuration" class="form-label">計時時間 (分鐘)</label>
+              <input type="number" class="form-control" id="timerDuration" required>
+            </div>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rename Modal -->
+  <div class="modal fade" id="renameModal" tabindex="-1" aria-labelledby="renameModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="renameModalLabel">重新命名插座</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="renameForm">
+            <div class="mb-3">
+              <label for="currentAlias" class="form-label">目前名稱</label>
+              <input type="text" class="form-control" id="currentAlias" disabled>
+            </div>
+            <div class="mb-3">
+              <label for="newAlias" class="form-label">新名稱</label>
+              <input type="text" class="form-control" id="newAlias" required>
+            </div>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Schedule Setting Modal -->
+  <div class="modal fade" id="scheduleSettingModal" tabindex="-1" aria-labelledby="scheduleSettingModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="scheduleSettingModalLabel">設定排程</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="scheduleSettingForm">
+            <div class="mb-3">
+              <label class="form-label">動作</label>
+              <div>
+                <div class="form-check form-check-inline">
+                  <input class="form-check-input" type="radio" name="action" value="on" required>
+                  <label class="form-check-label">開啟電源</label>
+                </div>
+                <div class="form-check form-check-inline">
+                  <input class="form-check-input" type="radio" name="action" value="off" required>
+                  <label class="form-check-label">關閉電源</label>
+                </div>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label for="scheduleTime" class="form-label">時間</label>
+              <input type="time" class="form-control" id="scheduleTime" required>
+            </div>
+            <div class="mb-3">
+              <label for="scheduleDays" class="form-label">重複日期</label>
+              <select multiple class="form-select" id="scheduleDays">
+                <option>Monday</option>
+                <option>Tuesday</option>
+                <option>Wednesday</option>
+                <option>Thursday</option>
+                <option>Friday</option>
+                <option>Saturday</option>
+                <option>Sunday</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">儲存</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap 5 Bundle JS (包含 Popper) -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- WebSocket 推播連線腳本 -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const ips = {{ ips|tojson }};
+      ips.forEach(ip => {
+        const ws = new WebSocket("ws://" + window.location.host + "/ws/" + ip);
+        ws.onmessage = function(event) {
+          const plugData = JSON.parse(event.data);
+          const id = `#plug-data-${ip.replace(/\./g, '-')}`;
+          $(id).empty();
+          plugData.forEach(function(plug) {
+            $(id).append(`
+              <tr>
+                <td>${plug.alias}</td>
+                <td>${plug.state}</td>
+                <td>${plug.voltage} V</td>
+                <td>${plug.current} A</td>
+                <td>${plug.power} W</td>
+                <td>${plug.today_consumption} kWh</td>
+                <td>${plug.month_consumption} kWh</td>
+                <td>${plug.total_energy} kWh</td>
+                <td>${plug.on_since ? plug.on_since : 'N/A'}</td>
+                <td>
+                  <button class="btn btn-primary btn-sm" onclick="togglePlug('${ip}', ${plug.index})">切換</button>
+                  <button class="btn btn-secondary btn-sm" onclick="openScheduleModal('${ip}', ${plug.index})">不在家模式</button>
+                  <button class="btn btn-info btn-sm" onclick="openTimerModal('${ip}', ${plug.index})">計時器</button>
+                  <button class="btn btn-warning btn-sm" onclick="openRenameModal('${ip}', ${plug.index}, '${plug.alias}')">重新命名</button>
+                  <button class="btn btn-success btn-sm" onclick="openScheduleSettingModal('${ip}', ${plug.index})">排程</button>
+                </td>
+              </tr>
+            `);
+          });
+        };
+      });
+    });
+  </script>
+
+  <!-- 自動顯示/隱藏右下角跳轉按鈕及動態切換箭頭 -->
+  <script>
+    let idleTimer;
+    function showScrollButton() {
+      $("#scrollButton").fadeIn();
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(function(){
+        $("#scrollButton").fadeOut();
+      }, 3000);
+    }
+    $(document).on("mousemove keydown", function(){
+      showScrollButton();
+    });
+    $(document).ready(function(){
+      $("#scrollButton").hide();
+    });
+    
+    // 當前頁面滾動位置決定按鈕顯示箭頭方向
+    function updateScrollButton() {
+      let scrollPos = $(window).scrollTop();
+      let windowHeight = $(window).height();
+      let documentHeight = $(document).height();
+      // 若滾動位置小於文件高度一半，則顯示向下箭頭（跳到底部）
+      if (scrollPos < (documentHeight - windowHeight) / 2) {
+        $("#scrollButton").html("&#x2193;");  // Unicode ↓
+      } else {
+        $("#scrollButton").html("&#x2191;");  // Unicode ↑
+      }
+    }
+    
+    // 點擊按鈕時根據箭頭方向決定跳轉
+    function scrollToggle() {
+      let scrollPos = $(window).scrollTop();
+      let windowHeight = $(window).height();
+      let documentHeight = $(document).height();
+      if (scrollPos < (documentHeight - windowHeight) / 2) {
+        // 跳到頁尾
+        $("html, body").animate({ scrollTop: documentHeight }, "slow");
+      } else {
+        // 跳到頁首
+        $("html, body").animate({ scrollTop: 0 }, "slow");
+      }
+    }
+    
+    $(window).on("scroll", function() {
+      updateScrollButton();
+      showScrollButton();
+    });
+  </script>
+
+  <!-- 原有 AJAX 與事件綁定腳本 -->
+  <script>
+    function togglePlug(ip, index) {
+      $.ajax({
+        url: `/toggle/${ip}/${index}`,
+        method: "POST",
+        success: function(response) {
+          alert(response.message);
+        }
+      });
+    }
+    function openScheduleModal(ip, index) {
+      $("#scheduleModal").modal("show");
+      $("#scheduleForm").off("submit").on("submit", function(event) {
+        event.preventDefault();
+        const start_time = $("#startTime").val();
+        const end_time = $("#endTime").val();
+        const days = $("#days").val();
+        $.ajax({
+          url: "/schedule",
+          method: "POST",
+          contentType: "application/json",
+          data: JSON.stringify({
+            ip: ip,
+            index: index,
+            start_time: start_time,
+            end_time: end_time,
+            days: days
+          }),
+          success: function(response) {
+            alert("Schedule set successfully!");
+            $("#scheduleModal").modal("hide");
+          }
+        });
+      });
+    }
+    function openTimerModal(ip, index) {
+      $("#timerModal").modal("show");
+      $("#timerForm").off("submit").on("submit", function(event) {
+        event.preventDefault();
+        const duration = $("#timerDuration").val();
+        $.ajax({
+          url: "/timer",
+          method: "POST",
+          contentType: "application/json",
+          data: JSON.stringify({
+            ip: ip,
+            index: index,
+            duration: parseInt(duration) * 60
+          }),
+          success: function(response) {
+            alert("Timer set successfully!");
+            $("#timerModal").modal("hide");
+          }
+        });
+      });
+    }
+    function openRenameModal(ip, index, currentAlias) {
+      $("#renameModal").modal("show");
+      $("#currentAlias").val(currentAlias);
+      $("#renameForm").off("submit").on("submit", function(event) {
+        event.preventDefault();
+        const newAlias = $("#newAlias").val();
+        $.ajax({
+          url: "/rename",
+          method: "POST",
+          contentType: "application/json",
+          data: JSON.stringify({
+            ip: ip,
+            index: index,
+            new_alias: newAlias
+          }),
+          success: function(response) {
+            alert("Alias renamed successfully!");
+            $("#renameModal").modal("hide");
+          }
+        });
+      });
+    }
+    function openScheduleSettingModal(ip, index) {
+      $("#scheduleSettingModal").modal("show");
+      $("#scheduleSettingForm").off("submit").on("submit", function(event) {
+        event.preventDefault();
+        const action = $("input[name='action']:checked").val();
+        const time = $("#scheduleTime").val();
+        const days = $("#scheduleDays").val();
+        $.ajax({
+          url: "/schedule",
+          method: "POST",
+          contentType: "application/json",
+          data: JSON.stringify({
+            ip: ip,
+            index: index,
+            action: action,
+            time: time,
+            days: days
+          }),
+          success: function(response) {
+            alert("Schedule set successfully!");
+            $("#scheduleSettingModal").modal("hide");
+          }
+        });
+      });
+    }
+    $("#allOnBtn").click(function() {
+      $.ajax({
+        url: "/all_on",
+        method: "POST",
+        success: function(response) {
+          alert(response.message);
+        }
+      });
+    });
+    $("#allOffBtn").click(function() {
+      $.ajax({
+        url: "/all_off",
+        method: "POST",
+        success: function(response) {
+          alert(response.message);
+        }
+      });
+    });
+    // 個別設備控制函式
+    function deviceOn(ip) {
+      $.ajax({
+        url: `/device_on/${ip}`,
+        method: "POST",
+        success: function(response) {
+          alert(response.message);
+        }
+      });
+    }
+    function deviceOff(ip) {
+      $.ajax({
+        url: `/device_off/${ip}`,
+        method: "POST",
+        success: function(response) {
+          alert(response.message);
+        }
+      });
+    }
+    $("#groupForm").on("submit", function(event) {
+      event.preventDefault();
+      const groupName = $("#groupName").val();
+      const groupIndexes = $("#groupIndexes").val().split(",").map(item => item.trim());
+      const ip = $("#controllerIp").val();
+      $.ajax({
+        url: "/create_group",
+        method: "POST",
+        contentType: "application/json",
+        data: JSON.stringify({
+          name: groupName,
+          indexes: groupIndexes,
+          ip: ip
+        }),
+        success: function(response) {
+          alert(response.message);
+          fetchGroups();
+        }
+      });
+    });
+    function fetchGroups() {
+      $.getJSON(`/groups_all`, function(data) {
+        $("#group-list").empty();
+        data.groups.forEach(function(group) {
+          $("#group-list").append(`
+            <tr>
+              <td>${group.name}</td>
+              <td>${group.sockets.join(", ")}</td>
+              <td>${group.controller_ip}</td>
+              <td>
+                <button class="btn btn-primary btn-sm" onclick="toggleGroup('${group.controller_ip}', '${group.name}', 'on')">開啟</button>
+                <button class="btn btn-danger btn-sm" onclick="toggleGroup('${group.controller_ip}', '${group.name}', 'off')">關閉</button>
+                <button class="btn btn-warning btn-sm" onclick="renameGroup('${group.controller_ip}', '${group.name}')">重新命名</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteGroup('${group.controller_ip}', '${group.name}')">刪除</button>
+              </td>
+            </tr>
+          `);
+        });
+      });
+    }
+    fetchGroups();
+    setInterval(fetchGroups, 3000);
+    function toggleGroup(ip, name, action) {
+      $.ajax({
+        url: "/toggle_group",
+        method: "POST",
+        contentType: "application/json",
+        data: JSON.stringify({ ip: ip, name: name, action: action }),
+        success: function(response) {
+          alert(response.message);
+          fetchGroups();
+        }
+      });
+    }
+    function renameGroup(ip, oldName) {
+      const newName = prompt("請輸入新的群組名稱：", oldName);
+      if (newName && newName !== oldName) {
+        $.ajax({
+          url: "/rename_group",
+          method: "POST",
+          contentType: "application/json",
+          data: JSON.stringify({ ip: ip, old_name: oldName, new_name: newName }),
+          success: function(response) {
+            alert(response.message);
+            fetchGroups();
+          }
+        });
+      }
+    }
+    function deleteGroup(ip, name) {
+      if (confirm(`確認刪除群組 "${name}" 嗎？`)) {
+        $.ajax({
+          url: "/delete_group",
+          method: "POST",
+          contentType: "application/json",
+          data: JSON.stringify({ ip: ip, name: name }),
+          success: function(response) {
+            alert(response.message);
+            fetchGroups();
+          }
+        });
+      }
+    }
+  </script>
+</body>
+</html>
