@@ -33,6 +33,10 @@
 8. Show offline HS300 devices.
 9. Group control for HS300 devices.
 
+## TO-DO List
+- [ ] Support reconnecting to offline HS300 devices.  
+- [ ] Get the latitude and longitude from the Internet on the device running the dashboard.
+
 ## Credits
 - [python-kasa](https://github.com/python-kasa/python-kasa)
 - [TP-Link](https://www.tp-link.com)
