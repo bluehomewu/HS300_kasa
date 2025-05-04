@@ -49,6 +49,10 @@
       cursor: pointer;
     }
   </style>
+  <script>
+    // controllers 是 app.py 傳進來的 HS300 IP 陣列
+    window.HS300_IPs = {{ controllers | tojson }};
+  </script>
 </head>
 <body>
   <!-- ===== 增加：離線裝置提示 ===== -->
@@ -371,7 +375,7 @@
     $(document).ready(function(){
       $("#scrollButton").hide();
     });
-    
+
     // 當前頁面滾動位置決定按鈕顯示箭頭方向
     function updateScrollButton() {
       let scrollPos = $(window).scrollTop();
@@ -384,7 +388,7 @@
         $("#scrollButton").html("&#x2191;");  // Unicode ↑
       }
     }
-    
+
     // 點擊按鈕時根據箭頭方向決定跳轉
     function scrollToggle() {
       let scrollPos = $(window).scrollTop();
@@ -398,7 +402,7 @@
         $("html, body").animate({ scrollTop: 0 }, "slow");
       }
     }
-    
+
     $(window).on("scroll", function() {
       updateScrollButton();
       showScrollButton();
